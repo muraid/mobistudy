@@ -794,6 +794,13 @@ function startAggTimedTest() {
             showMainMenu();
        });
       },
+      "Stop streaming": () => {
+        isStreaming = false;
+        Bluetooth.setConsole(true);   // återställ BLE till REPL
+        Terminal.setConsole(false);   // ta bort REPL från skärmen
+        send("STOPPED");
+        E.showAlert("Streaming stopped").then(() => showMainMenu());
+      },
       "Raw logging": () => showRawMenu(),
       "Agg logging": () => showAggMenu(),
       "EMA settings": () => showEMAMenu()
