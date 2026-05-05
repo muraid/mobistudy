@@ -1,5 +1,4 @@
 (() => {
-  //Bluetooth.setConsole(false);
   Bangle.loadWidgets();
   Bangle.drawWidgets();
 
@@ -26,7 +25,6 @@
   // 4 bytes timestamp + 1 step + 1 accel + 1 HR + 1 conf + 1 battery + 1 temp + 1 padding = 11 bytes per row
   const RAW_FILE_LEN = 60000;
   const AGG_FILE_LEN = 20000;
-
 
   let rows = [];
 
@@ -658,7 +656,6 @@ function startAggTimedTest() {
     });
 }
 
-
   // ---------------- BLUETOOTH COMMANDS (STREAMING) ----------------
 
   Bluetooth.on("data", function(d) {
@@ -749,9 +746,7 @@ function startAggTimedTest() {
   });
 }
 
-
-
-  function startEMA() {
+function startEMA() {
   if (!isAggregated) return;
   if (emaON) return;
 
@@ -765,9 +760,7 @@ function startAggTimedTest() {
   }, settings.emaInterval * 3600 * 1000);
 }
 
-
-  
-  function stopEMA() {
+function stopEMA() {
   if (!emaON) return;
   emaON = false;
 
@@ -943,7 +936,6 @@ function startAggTimedTest() {
     });
   }
 
-
   function showEMAMenu() {
     E.showMenu({
       "": { title: "EMA Settings" },
@@ -999,5 +991,4 @@ function startAggTimedTest() {
     send("DEBUG: Could not load settings");
   }
 
-  //Terminal.setConsole(true);
 })();
