@@ -780,20 +780,19 @@ function stopEMA() {
       "": { title: "AW app" },
       
       //for web app and mobile app streming 
-      "Streaming": () => {
+      "Start BLE mode": () => {
         Bluetooth.setConsole(false);   // gör BLE till datakanal
         Terminal.setConsole(true);     // flytta REPL till skärmen
         E.showAlert("Start streaming").then(() => {
             showMainMenu();
        });
       },
-      "Stop streaming": () => {
-        isStreaming = false;
-        Bluetooth.setConsole(true);   // återställ BLE till REPL
-        Terminal.setConsole(false);   // ta bort REPL från skärmen
-        send("STOPPED");
-        E.showAlert("Streaming stopped").then(() => showMainMenu());
+      "Exit BLE mode": () => {
+      Terminal.setConsole();      // släpp REPL från skärmen
+      Bluetooth.setConsole(true); // återställ REPL till BLE
+      E.showAlert("BLE console restored").then(() => showMainMenu());
       },
+      
       "Raw logging": () => showRawMenu(),
       "Agg logging": () => showAggMenu(),
       "EMA settings": () => showEMAMenu()
