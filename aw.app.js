@@ -734,11 +734,11 @@ function startAggTimedTest() {
     let ts = Math.round(Date.now() / 1000);
     if (answer === true) {
       send(`EMA_RESPONSE,YES,${ts}`);
-      appendEventRow(1); // optional event code for YES
+      appendEventRow(101); // optional event code for YES
       flushRows(); // ensure EMA response is saved immediately
     } else if (answer === false) {
       send(`EMA_RESPONSE,NO,${ts}`);
-      appendEventRow(0); // optional event code for NO
+      appendEventRow(100); // optional event code for NO
       flushRows(); // ensure EMA response is saved immediately
     } 
     // Return to EMA menu
