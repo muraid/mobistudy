@@ -63,7 +63,7 @@
 
   // barometer shared state (temp + pressure)
   let baroOn = false;
-  
+
   // EMA variables
   let emaON = false;
   let emaTimer = null;
@@ -77,7 +77,7 @@
   let lastMag = null;
   let lastGPS = null;
 
-//function to send messages
+  //function to send messages
   function send(line) {
     Bluetooth.println(line);
   }
@@ -93,110 +93,110 @@
   }
 
   // ---------------- FILE LOGGING ----------------
-function flushRows() {
-  if (rows.length === 0) return;
+  function flushRows() {
+    if (rows.length === 0) return;
 
-  let rowSize = settings.rawMode ? 20 : 9;
-  let block = new Uint8Array(rows.length * rowSize);
+    let rowSize = settings.rawMode ? 20 : 9;
+    let block = new Uint8Array(rows.length * rowSize);
 
-  let pos = 0;
-  for (let r of rows) {
-    block.set(r, pos);
-    pos += rowSize;
+    let pos = 0;
+    for (let r of rows) {
+      block.set(r, pos);
+      pos += rowSize;
+    }
+
+    if (config.appendPos + block.length > config.totalLen) {
+      console.log("FILE FULL");
+      return;
+    }
+
+    storage.write(config.filename, block, config.appendPos, config.totalLen);
+    config.appendPos += block.length;
+    rows = [];
   }
 
-  if (config.appendPos + block.length > config.totalLen) {
-    console.log("FILE FULL");
-    return;
+  function appendRawRow() {
+    let row = new Uint8Array(20);
+    let pos = 0;
+
+    // timestamp
+    let ts = Math.round(Date.now() / 1000);
+    row.set(numToBytes(ts, 4), pos); pos += 4;
+
+    // steps
+    row[pos++] = currentStepCount & 255;
+
+    // hr
+    row[pos++] = hr & 255;
+
+    // temp (baro temp)
+    row[pos++] = lastTemp ? Math.round(lastTemp) : 0;
+
+    // accel scaled
+    let ax = lastAcc ? Math.round(lastAcc.x * 50) : 0;
+    let ay = lastAcc ? Math.round(lastAcc.y * 50) : 0;
+    let az = lastAcc ? Math.round(lastAcc.z * 50) : 0;
+    row[pos++] = ax;
+    row[pos++] = ay;
+    row[pos++] = az;
+
+    // mag scaled
+    let mx = lastMag ? Math.round(lastMag.x) : 0;
+    let my = lastMag ? Math.round(lastMag.y) : 0;
+    let mz = lastMag ? Math.round(lastMag.z) : 0;
+    row[pos++] = mx;
+    row[pos++] = my;
+    row[pos++] = mz;
+
+    // gps lat/lon scaled
+    let lat = lastGPS ? Math.round(lastGPS.lat * 10000) : 0;
+    let lon = lastGPS ? Math.round(lastGPS.lon * 10000) : 0;
+    row.set(numToBytes(lat, 2), pos); pos += 2;
+    row.set(numToBytes(lon, 2), pos); pos += 2;
+
+    // battery
+    let batt = Math.round(E.getBattery() * 10);
+    row.set(numToBytes(batt, 2), pos); pos += 2;
+
+    // padding
+    row[pos++] = 0;
+
+    rows.push(row);
+    if (rows.length >= settings.ramSize) flushRows();
   }
 
-  storage.write(config.filename, block, config.appendPos, config.totalLen);
-  config.appendPos += block.length;
-  rows = [];
-}
+  function appendAggRow(ts) {
+    let row = new Uint8Array(9);
 
-function appendRawRow() {
-  let row = new Uint8Array(20);
-  let pos = 0;
+    row.set(numToBytes(ts, 4), 0);
 
-  // timestamp
-  let ts = Math.round(Date.now() / 1000);
-  row.set(numToBytes(ts, 4), pos); pos += 4;
+    row[4] = currentStepCount & 255;
 
-  // steps
-  row[pos++] = currentStepCount & 255;
+    let accelAvg = accelSamples ? (accelSum / accelSamples) : 0;
+    row[5] = Math.min(255, Math.round(accelAvg * 100));
 
-  // hr
-  row[pos++] = hr & 255;
+    row[6] = hr & 255;
+    row[7] = hrConfidence & 255;
 
-  // temp (baro temp)
-  row[pos++] = lastTemp ? Math.round(lastTemp) : 0;
+    let tempAvg = tempSamples ? (tempSum / tempSamples) : 0;
+    row[8] = Math.round(tempAvg);
 
-  // accel scaled
-  let ax = lastAcc ? Math.round(lastAcc.x * 50) : 0;
-  let ay = lastAcc ? Math.round(lastAcc.y * 50) : 0;
-  let az = lastAcc ? Math.round(lastAcc.z * 50) : 0;
-  row[pos++] = ax;
-  row[pos++] = ay;
-  row[pos++] = az;
+    rows.push(row);
+    if (rows.length >= settings.ramSize) flushRows();
+  }
 
-  // mag scaled
-  let mx = lastMag ? Math.round(lastMag.x) : 0;
-  let my = lastMag ? Math.round(lastMag.y) : 0;
-  let mz = lastMag ? Math.round(lastMag.z) : 0;
-  row[pos++] = mx;
-  row[pos++] = my;
-  row[pos++] = mz;
+  function appendEventRow(code) {
+    let rowSize = settings.rawMode ? 20 : 9;
+    let row = new Uint8Array(rowSize);
 
-  // gps lat/lon scaled
-  let lat = lastGPS ? Math.round(lastGPS.lat * 10000) : 0;
-  let lon = lastGPS ? Math.round(lastGPS.lon * 10000) : 0;
-  row.set(numToBytes(lat, 2), pos); pos += 2;
-  row.set(numToBytes(lon, 2), pos); pos += 2;
+    let ts = Math.round(Date.now() / 1000);
+    let timestampBytes = numToBytes(ts, 4);
+    row.set(timestampBytes, 0);
 
-  // battery
-  let batt = Math.round(E.getBattery() * 10);
-  row.set(numToBytes(batt, 2), pos); pos += 2;
+    row[4] = code; // event code
 
-  // padding
-  row[pos++] = 0;
-
-  rows.push(row);
-  if (rows.length >= settings.ramSize) flushRows();
-}
-
-function appendAggRow(ts) {
-  let row = new Uint8Array(9);
-
-  row.set(numToBytes(ts, 4), 0);
-
-  row[4] = currentStepCount & 255;
-
-  let accelAvg = accelSamples ? (accelSum / accelSamples) : 0;
-  row[5] = Math.min(255, Math.round(accelAvg * 100));
-
-  row[6] = hr & 255;
-  row[7] = hrConfidence & 255;
-
-  let tempAvg = tempSamples ? (tempSum / tempSamples) : 0;
-  row[8] = Math.round(tempAvg);
-
-  rows.push(row);
-  if (rows.length >= settings.ramSize) flushRows();
-}
-
-function appendEventRow(code) {
-  let rowSize = settings.rawMode ? 20 : 9;
-  let row = new Uint8Array(rowSize);
-
-  let ts = Math.round(Date.now() / 1000);
-  let timestampBytes = numToBytes(ts, 4);
-  row.set(timestampBytes, 0);
-
-  row[4] = code; // event code
-
-  rows.push(row);
-}
+    rows.push(row);
+  }
 
   // ---------------- BAROMETER POWER ----------------
 
@@ -337,9 +337,9 @@ function appendEventRow(code) {
       hrmBuffer.push(d);
     }
     if (settings.rawMode) {
-    hr = d.bpm;
-    hrConfidence = d.confidence;
-}
+      hr = d.bpm;
+      hrConfidence = d.confidence;
+    }
   }
 
   // HR-mätning: bästa HR under senaste 20 sek
@@ -358,31 +358,31 @@ function appendEventRow(code) {
   }
 
   function onSTEP(s) {
-  // --- LOGGING (aggregated) ---
-  if (isAggregated && stepOn) {
-    if (lastStepAgg < 0) {
+    // --- LOGGING (aggregated) ---
+    if (isAggregated && stepOn) {
+      if (lastStepAgg < 0) {
+        lastStepAgg = s;
+        return;
+      }
+      const diff = s - lastStepAgg;
+      if (diff >= 0) currentStepCount += diff;
       lastStepAgg = s;
-      return;
     }
-    const diff = s - lastStepAgg;
-    if (diff >= 0) currentStepCount += diff;
-    lastStepAgg = s;
-  }
 
-  // --- STREAMING (räkna steg även om vi inte skickar direkt) ---
-  if (isStreaming && stepOn) {
-    if (lastStepStream < 0) {
+    // --- STREAMING (räkna steg även om vi inte skickar direkt) ---
+    if (isStreaming && stepOn) {
+      if (lastStepStream < 0) {
+        lastStepStream = s;
+        return;
+      }
+      const diff = s - lastStepStream;
+      if (diff >= 0) currentStepCount += diff;
       lastStepStream = s;
-      return;
     }
-    const diff = s - lastStepStream;
-    if (diff >= 0) currentStepCount += diff;
-    lastStepStream = s;
-  }
-  if (isStreaming && stepOn) {
-    const ms = Date.now() - startTime;
-    send(`DATA,STEPS,${ms},${currentStepCount}`);
-  }
+    if (isStreaming && stepOn) {
+      const ms = Date.now() - startTime;
+      send(`DATA,STEPS,${ms},${currentStepCount}`);
+    }
 
   }
 
@@ -402,103 +402,103 @@ function appendEventRow(code) {
   }
 
   //function for 6 minutes walking test
- function startSixMWT() {
-  settings.rawMode = true; // force raw mode for 6MWT, since we only want raw data from this test 
-  storage.writeJSON("awapp.settings.json", settings);
+  function startSixMWT() {
+    settings.rawMode = true; // force raw mode for 6MWT, since we only want raw data from this test 
+    storage.writeJSON("awapp.settings.json", settings);
 
-  sixMWTSeconds = 360;
+    sixMWTSeconds = 360;
 
- //Start logging raw data and it uses all raw sensors for logging 
-  startCollection();
+    //Start logging raw data and it uses all raw sensors for logging 
+    startCollection();
 
-  // Event start
-  let ts = Math.round(Date.now() / 1000);
-  send(`EVENT,6MWT_START,${ts}`);
-  appendEventRow(1);
+    // Event start
+    let ts = Math.round(Date.now() / 1000);
+    send(`EVENT,6MWT_START,${ts}`);
+    appendEventRow(1);
 
-  Bangle.buzz();
+    Bangle.buzz();
 
-  sixMWTInterval = setInterval(() => {
-    sixMWTSeconds--;
+    sixMWTInterval = setInterval(() => {
+      sixMWTSeconds--;
 
-    if (sixMWTSeconds <= 0) {
-      clearInterval(sixMWTInterval);
-      sixMWTInterval = undefined;
+      if (sixMWTSeconds <= 0) {
+        clearInterval(sixMWTInterval);
+        sixMWTInterval = undefined;
 
-      // Event end
-      let ts2 = Math.round(Date.now() / 1000);
-      send(`EVENT,6MWT_END,${ts2}`);
-      appendEventRow(2);
+        // Event end
+        let ts2 = Math.round(Date.now() / 1000);
+        send(`EVENT,6MWT_END,${ts2}`);
+        appendEventRow(2);
 
-      Bangle.buzz();
+        Bangle.buzz();
 
-      // Stop logging
-      stopCollection();
-    }
-  }, 1000);
+        // Stop logging
+        stopCollection();
+      }
+    }, 1000);
   }
 
   //function for timed test (default 6 minutes, configurable in menu), for raw data 
-function startTimedTest() {
-  settings.rawMode = true;
-  storage.writeJSON("awapp.settings.json", settings);
+  function startTimedTest() {
+    settings.rawMode = true;
+    storage.writeJSON("awapp.settings.json", settings);
 
-  let durationSec = settings.timedTestMinutes * 60;
+    let durationSec = settings.timedTestMinutes * 60;
 
-  startCollection(); // startar raw logging
+    startCollection(); // startar raw logging
 
-  let ts = Math.round(Date.now() / 1000);
-  send(`EVENT,TIMED_START,${ts}`);
-  appendEventRow(10);
+    let ts = Math.round(Date.now() / 1000);
+    send(`EVENT,TIMED_START,${ts}`);
+    appendEventRow(10);
 
-  Bangle.buzz();
+    Bangle.buzz();
 
-  let remaining = durationSec;
-  let timer = setInterval(() => {
-    remaining--;
-    if (remaining <= 0) {
-      clearInterval(timer);
+    let remaining = durationSec;
+    let timer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(timer);
 
-      let ts2 = Math.round(Date.now() / 1000);
-      send(`EVENT,TIMED_END,${ts2}`);
-      appendEventRow(11);
+        let ts2 = Math.round(Date.now() / 1000);
+        send(`EVENT,TIMED_END,${ts2}`);
+        appendEventRow(11);
 
-      Bangle.buzz();
-      stopCollection();
-    }
-  }, 1000);
-}
+        Bangle.buzz();
+        stopCollection();
+      }
+    }, 1000);
+  }
 
-// function for aggregated timed test
-function startAggTimedTest() {
-  settings.rawMode = false; // force aggregated mode
-  storage.writeJSON("awapp.settings.json", settings);
+  // function for aggregated timed test
+  function startAggTimedTest() {
+    settings.rawMode = false; // force aggregated mode
+    storage.writeJSON("awapp.settings.json", settings);
 
-  let durationSec = settings.timedTestMinutes * 60;
+    let durationSec = settings.timedTestMinutes * 60;
 
-  startCollection(); // start aggregated logging
+    startCollection(); // start aggregated logging
 
-  let ts = Math.round(Date.now() / 1000);
-  send(`EVENT,AGG_TIMED_START,${ts}`);
-  appendEventRow(20); // new event code for aggregated timed test start
+    let ts = Math.round(Date.now() / 1000);
+    send(`EVENT,AGG_TIMED_START,${ts}`);
+    appendEventRow(20); // new event code for aggregated timed test start
 
-  Bangle.buzz();
+    Bangle.buzz();
 
-  let remaining = durationSec;
-  let timer = setInterval(() => {
-    remaining--;
-    if (remaining <= 0) {
-      clearInterval(timer);
+    let remaining = durationSec;
+    let timer = setInterval(() => {
+      remaining--;
+      if (remaining <= 0) {
+        clearInterval(timer);
 
-      let ts2 = Math.round(Date.now() / 1000);
-      send(`EVENT,AGG_TIMED_END,${ts2}`);
-      appendEventRow(21); // new event code for aggregated timed test end
+        let ts2 = Math.round(Date.now() / 1000);
+        send(`EVENT,AGG_TIMED_END,${ts2}`);
+        appendEventRow(21); // new event code for aggregated timed test end
 
-      Bangle.buzz();
-      stopCollection();
-    }
-  }, 1000);
-}
+        Bangle.buzz();
+        stopCollection();
+      }
+    }, 1000);
+  }
 
   // ------------- Streaming extra sensorer -------------
 
@@ -579,8 +579,8 @@ function startAggTimedTest() {
 
     if (settings.emaEnabled && !isRaw) startEMA();
 
-      // ---------------- RAW LOGGING ----------------
-      if (isRaw) {
+    // ---------------- RAW LOGGING ----------------
+    if (isRaw) {
 
       // Start ALL sensors needed for raw logging
       startSteps();
@@ -630,35 +630,35 @@ function startAggTimedTest() {
   }
 
   function stopCollection() {
-  if (rows.length > 0) flushRows();
+    if (rows.length > 0) flushRows();
 
-  if (logTimer) clearInterval(logTimer);
-  if (hrTimer) clearInterval(hrTimer);
+    if (logTimer) clearInterval(logTimer);
+    if (hrTimer) clearInterval(hrTimer);
 
-  logTimer = null;
-  hrTimer = null;
+    logTimer = null;
+    hrTimer = null;
 
-  stopSteps();
-  stopAccel();
-  stopHRM();
-  stopTemp();
-  stopPressure();
-  stopMag();
-  stopGps();
+    stopSteps();
+    stopAccel();
+    stopHRM();
+    stopTemp();
+    stopPressure();
+    stopMag();
+    stopGps();
 
-  stopEMA();
+    stopEMA();
 
-  isAggregated = false;
+    isAggregated = false;
 
-  Bangle.buzz(200);
-  E.showAlert("Stopped collection").then(() => { //this function can be removed if the alert is not wanted.
+    Bangle.buzz(200);
+    E.showAlert("Stopped collection").then(() => { //this function can be removed if the alert is not wanted.
       showMainMenu();
     });
-}
+  }
 
   // ---------------- BLUETOOTH COMMANDS (STREAMING) ----------------
 
-  Bluetooth.on("data", function(d) {
+  Bluetooth.on("data", function (d) {
     d.split("\n").forEach(cmd => {
       cmd = cmd.trim();
       if (!cmd) return;
@@ -720,57 +720,57 @@ function startAggTimedTest() {
   });
 
   function sendEMA() {
-  if (!emaON) return;
+    if (!emaON) return;
 
-  // Delay ensures buzz works even when screen is off
-  setTimeout(() => Bangle.buzz(300), 100);
+    // Delay ensures buzz works even when screen is off
+    setTimeout(() => Bangle.buzz(300), 100);
 
-  E.showPrompt("Are you stressed right now?", {
-    title: "EMA",
-    buttons: { "Yes": true, "No": false }
-  }).then(answer => {
+    E.showPrompt("Are you stressed right now?", {
+      title: "EMA",
+      buttons: { "Yes": true, "No": false }
+    }).then(answer => {
 
-    // Log or send the EMA response
-    let ts = Math.round(Date.now() / 1000);
-    if (answer === true) {
-      send(`EMA_RESPONSE,YES,${ts}`);
-      appendEventRow(101); // optional event code for YES
-      flushRows(); // ensure EMA response is saved immediately
-    } else if (answer === false) {
-      send(`EMA_RESPONSE,NO,${ts}`);
-      appendEventRow(100); // optional event code for NO
-      flushRows(); // ensure EMA response is saved immediately
-    } 
-    // Return to EMA menu
-    showEMAMenu();
-  });
-}
-
-function startEMA() {
-  if (!isAggregated) return;
-  if (emaON) return;
-
-  emaON = true;
-
-  // Initial buzz when EMA starts
-  setTimeout(() => Bangle.buzz(300), 100);
-
-  emaTimer = setInterval(() => {
-    sendEMA();
-  }, settings.emaInterval * 3600 * 1000);
-}
-
-function stopEMA() {
-  if (!emaON) return;
-  emaON = false;
-
-  if (emaTimer) {
-    clearInterval(emaTimer);
-    emaTimer = null;
+      // Log or send the EMA response
+      let ts = Math.round(Date.now() / 1000);
+      if (answer === true) {
+        send(`EMA_RESPONSE,YES,${ts}`);
+        appendEventRow(101); // optional event code for YES
+        flushRows(); // ensure EMA response is saved immediately
+      } else if (answer === false) {
+        send(`EMA_RESPONSE,NO,${ts}`);
+        appendEventRow(100); // optional event code for NO
+        flushRows(); // ensure EMA response is saved immediately
+      }
+      // Return to EMA menu
+      showEMAMenu();
+    });
   }
 
-  setTimeout(() => Bangle.buzz(200), 50);
-}
+  function startEMA() {
+    if (!isAggregated) return;
+    if (emaON) return;
+
+    emaON = true;
+
+    // Initial buzz when EMA starts
+    setTimeout(() => Bangle.buzz(300), 100);
+
+    emaTimer = setInterval(() => {
+      sendEMA();
+    }, settings.emaInterval * 3600 * 1000);
+  }
+
+  function stopEMA() {
+    if (!emaON) return;
+    emaON = false;
+
+    if (emaTimer) {
+      clearInterval(emaTimer);
+      emaTimer = null;
+    }
+
+    setTimeout(() => Bangle.buzz(200), 50);
+  }
 
 
   // ---------------- MENU ----------------
@@ -778,21 +778,21 @@ function stopEMA() {
   function showMainMenu() {
     E.showMenu({
       "": { title: "AW app" },
-      
+
       //for web app and mobile app streming 
       "Start BLE mode": () => {
         Bluetooth.setConsole(false);   // gör BLE till datakanal
         Terminal.setConsole(true);     // flytta REPL till skärmen
         E.showAlert("Start streaming").then(() => {
-            showMainMenu();
-       });
+          showMainMenu();
+        });
       },
       "Exit BLE mode": () => {
-      Terminal.setConsole();      // släpp REPL från skärmen
-      Bluetooth.setConsole(true); // återställ REPL till BLE
-      E.showAlert("BLE console restored").then(() => showMainMenu());
+        Terminal.setConsole();      // släpp REPL från skärmen
+        Bluetooth.setConsole(true); // återställ REPL till BLE
+        E.showAlert("BLE console restored").then(() => showMainMenu());
       },
-      
+
       "Raw logging": () => showRawMenu(),
       "Agg logging": () => showAggMenu(),
       "EMA settings": () => showEMAMenu()
@@ -801,20 +801,20 @@ function stopEMA() {
 
   function intervalMenu() {
     const menu = {
-      "" : { title : "Sampling freq (sec)" },
-      "Value" : {
-      value : settings.interval,
-      min : 0,
-      max : 3600, // max 60 min
-      step : 30,
-      format : v => v + " s",
-      onchange : v => {
-        settings.interval = v;
-        storage.writeJSON("awapp.settings.json", settings);
-      }
-    },
+      "": { title: "Sampling freq (sec)" },
+      "Value": {
+        value: settings.interval,
+        min: 0,
+        max: 3600, // max 60 min
+        step: 30,
+        format: v => v + " s",
+        onchange: v => {
+          settings.interval = v;
+          storage.writeJSON("awapp.settings.json", settings);
+        }
+      },
 
-      "< Back" : () => { showAggMenu(); }
+      "< Back": () => { showAggMenu(); }
     };
     E.showMenu(menu);
   }
@@ -836,7 +836,7 @@ function stopEMA() {
           } else {
             settings.sensors = settings.sensors.filter(x => x !== s);
           }
-          storage.writeJSON("awapp.settings.json", settings); 
+          storage.writeJSON("awapp.settings.json", settings);
         }
       };
     });
@@ -895,41 +895,41 @@ function stopEMA() {
       "< Back": () => showMainMenu()
     });
   }
-        
-  function timedTest(){
+
+  function timedTest() {
     E.showMenu({
       "": { title: "Timed Test" },
-    "Test duration": {
-      value: settings.timedTestMinutes,
-      min: 1,
-      max: 60,
-      step: 1,
-      format: v => v + " min",
-      onchange: v => {
-        settings.timedTestMinutes = v;
-        storage.writeJSON("awapp.settings.json", settings);
-      }
-    },
+      "Test duration": {
+        value: settings.timedTestMinutes,
+        min: 1,
+        max: 60,
+        step: 1,
+        format: v => v + " min",
+        onchange: v => {
+          settings.timedTestMinutes = v;
+          storage.writeJSON("awapp.settings.json", settings);
+        }
+      },
       "Start timed test": () => startTimedTest(),
-      "Start 6MWT" : () => startSixMWT(),
+      "Start 6MWT": () => startSixMWT(),
       "< Back": () => showRawMenu()
     });
   }
 
-  function timedTestAgg(){
+  function timedTestAgg() {
     E.showMenu({
       "": { title: "Timed Test (Agg)" },
-    "Test duration": {
-      value: settings.timedTestMinutes,
-      min: 1,
-      max: 60,
-      step: 1,
-      format: v => v + " min",
-      onchange: v => {
-        settings.timedTestMinutes = v;
-        storage.writeJSON("awapp.settings.json", settings);
-      }
-    },
+      "Test duration": {
+        value: settings.timedTestMinutes,
+        min: 1,
+        max: 60,
+        step: 1,
+        format: v => v + " min",
+        onchange: v => {
+          settings.timedTestMinutes = v;
+          storage.writeJSON("awapp.settings.json", settings);
+        }
+      },
       "Start timed test": () => startAggTimedTest(),
       "< Back": () => showAggMenu()
     });
